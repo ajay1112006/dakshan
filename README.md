@@ -67,67 +67,66 @@ dakshan/
 
 ---
 
-## 🤖 Connecting to Your Local GGUF Model
+## 🤖 AI Model Providers
 
-### Assumption
-GGUF is a model binary format optimized for quantization and local CPU/GPU execution. GGUF models are typically run using a local inference runtime (such as **llama.cpp**, **Ollama**, or **LM Studio**) that hosts the model and provides an **OpenAI-compatible HTTP chat endpoint** (e.g. `POST /v1/chat/completions`).
+### Option 1: Google Gemini API (Recommended for Cloud / Vercel / Instant Deployment)
+You can power Dakshan AI with Google's state-of-the-art Gemini models:
 
-The server route handler in this app connects to this endpoint through `src/lib/llm.ts`. Neither the model path nor the server endpoint are hardcoded.
+1. Get your free API key at [Google AI Studio](https://aistudio.google.com/app/apikey).
+2. Add your key to `.env.local` (or in your Vercel project Environment Variables):
+   ```env
+   GEMINI_API_KEY=AIzaSy...your_gemini_key_here
+   GEMINI_MODEL=gemini-1.5-flash
+   ```
+3. When `GEMINI_API_KEY` is present, Dakshan AI automatically routes to Gemini with dual failover support (Google's official OpenAI-compatible endpoint and native Gemini REST stream).
 
-### Option 1: Built-in Integrated llama-server (Active)
-Your uploaded **`Qwen3-0.6B-Q8_0.gguf`** model is already configured and ready to run with the included high-speed `llama-server.exe` binary in `tools/llama/`:
+### Option 2: Built-in Local GGUF Model (Offline)
+Your uploaded **`Qwen3-0.6B-Q8_0.gguf`** model runs locally using the included `llama-server.exe` in `tools/llama/`:
 
 ```bash
-# Start the local inference server with your uploaded GGUF model:
+# Start the local inference server with your GGUF model:
 npm run model:start
 ```
 The server binds to `http://127.0.0.1:8080/v1` and `.env.local` is already configured:
 ```env
 LLM_BASE_URL=http://127.0.0.1:8080/v1
 LLM_MODEL=Qwen3-0.6B-Q8_0.gguf
-ENABLE_OFFLINE_FALLBACK=false
 ```
 
-### Option 2: Ollama (Alternative)
-If you manage GGUF models or standard open-weights models through Ollama:
+### Option 3: Ollama (Alternative)
+```bash
+ollama run mistral
+```
+Set in `.env.local`:
+```env
+LLM_BASE_URL=http://127.0.0.1:11434/v1
+LLM_MODEL=mistral
+```
 
-1. Start Ollama and run your model:
-   ```bash
-   ollama run mistral
-   # or create a model from your custom GGUF using: ollama create my-model -f Modelfile
-   ```
+### Option 4: LM Studio
+1. Open **LM Studio**, load your model, and start the local server on port `1234`.
 2. Set in `.env.local`:
-   ```env
-   LLM_BASE_URL=http://127.0.0.1:11434/v1
-   LLM_MODEL=mistral
-   ```
-
-### Option 3: LM Studio
-1. Open **LM Studio**, load your GGUF model in the chat tab.
-2. Go to the **Local Server** (Developer) tab (`<->`), set port to `1234`, and click **Start Server**.
-3. Set in `.env.local`:
-   ```env
-   LLM_BASE_URL=http://127.0.0.1:1234/v1
-   LLM_MODEL=default
-   ```
-
-### Option 4: Instant Fallback Awareness Mode
-If you run this application before your GGUF server is started, the app includes a fallback mode (`ENABLE_OFFLINE_FALLBACK=true`). It answers waste sorting questions immediately and streams responses so you can test the full UI without needing active model weights running in memory.
+```env
+LLM_BASE_URL=http://127.0.0.1:1234/v1
+LLM_MODEL=default
+```
 
 ---
 
 ## ⚙️ Environment Variables
 
-Create or edit `.env.local` at the root of the project:
+Edit `.env.local` at the root of the project:
 
 | Variable | Default | Description |
 |---|---|---|
-| `LLM_BASE_URL` | `http://127.0.0.1:8080/v1` | Base URL of the OpenAI-compatible GGUF inference server |
-| `LLM_MODEL` | `default` | Model identifier passed to the inference server |
-| `LLM_API_KEY` | `not-needed` | Optional API key (most local servers do not require one) |
+| `GEMINI_API_KEY` | *(empty)* | Google Gemini API key. When provided, automatically activates Gemini. |
+| `GEMINI_MODEL` | `gemini-1.5-flash` | Gemini model name (`gemini-1.5-flash`, `gemini-2.0-flash`, `gemini-1.5-pro`) |
+| `LLM_BASE_URL` | `http://127.0.0.1:8080/v1` | Base URL of local OpenAI-compatible inference server |
+| `LLM_MODEL` | `default` | Model identifier passed to local server |
+| `LLM_API_KEY` | `not-needed` | Optional API key for local server |
 | `LLM_TEMPERATURE` | `0.2` | Sampling temperature (lower = more deterministic & factual) |
 | `LLM_TIMEOUT_MS` | `30000` | Request timeout in milliseconds (30 seconds) |
-| `ENABLE_OFFLINE_FALLBACK` | `true` | When true, provides local awareness responses if server is offline |
+| `ENABLE_OFFLINE_FALLBACK` | `true` | Provides instant fallback answers if model servers are offline |
 
 ---
 
