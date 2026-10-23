@@ -158,8 +158,17 @@ export async function streamChatCompletion(messages: LLMMessage[]): Promise<Read
 
   clearTimeout(timeoutId);
 
+  let friendlyMessage = 'Failed to communicate with Google Gemini API. Please check your GEMINI_API_KEY.';
+  if (lastErrorDetail.includes('429') || lastErrorDetail.includes('RESOURCE_EXHAUSTED') || lastErrorDetail.toLowerCase().includes('quota')) {
+    friendlyMessage = 'Google Gemini API quota exceeded (Limit: 20 requests/day on free tier). Please generate a new free API key at https://aistudio.google.com/app/apikey or upgrade your quota.';
+  } else if (lastErrorDetail.includes('API_KEY_INVALID') || (lastErrorDetail.includes('400') && lastErrorDetail.includes('API key not valid'))) {
+    friendlyMessage = 'Invalid Gemini API key. Please verify your GEMINI_API_KEY in your environment variables.';
+  } else if (lastErrorDetail.includes('404')) {
+    friendlyMessage = 'Configured Gemini model was not found (404). Falling back to gemini-2.5-flash.';
+  }
+
   throw new LLMConnectionError(
-    'Failed to communicate with Google Gemini API. Please check your GEMINI_API_KEY.',
+    friendlyMessage,
     'Google Gemini API',
     lastErrorDetail
   );
