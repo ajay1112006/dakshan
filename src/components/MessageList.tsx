@@ -34,7 +34,7 @@ export const MessageList: React.FC<MessageListProps> = ({
           </div>
           <h2 className="empty-title">Dakshan AI Assistant</h2>
           <p className="empty-subtitle">
-            Your conversational AI assistant powered by Gemini. Ask anything, brainstorm ideas, write code, or ask for eco-friendly waste advice.
+            Your conversational AI assistant powered by Groq. Ask anything, brainstorm ideas, write code, or ask for eco-friendly waste advice.
           </p>
 
           <div className="empty-suggestion-chips">

@@ -20,7 +20,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
         </div>
         <div className="brand-title">
           <span>Dakshan AI</span>
-          <span className="status-dot" title="Powered by Google Gemini" />
+          <span className="status-dot" title="Powered by Groq" />
         </div>
       </div>
 

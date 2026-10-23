@@ -67,17 +67,17 @@ dakshan/
 
 ---
 
-## 🤖 Powered Exclusively by Google Gemini
+## 🤖 Powered Exclusively by Groq Cloud API
 
-Dakshan AI is powered directly by Google's Gemini models with real-time streaming:
+Dakshan AI is powered directly by Groq's ultra-fast LPU inference engine with real-time streaming:
 
-1. Get your API key at [Google AI Studio](https://aistudio.google.com/app/apikey).
+1. Get your free API key at [Groq Console](https://console.groq.com/keys).
 2. Add your key to `.env.local` (or in your Vercel project Environment Variables):
    ```env
-   GEMINI_API_KEY=AIzaSy...your_gemini_key_here
-   GEMINI_MODEL=gemini-2.5-flash
+   GROQ_API_KEY=gsk_your_groq_key_here
+   GROQ_MODEL=llama-3.3-70b-versatile
    ```
-3. Dakshan AI communicates directly with Google Gemini with dual streaming failover support (Google's official OpenAI-compatible endpoint and native Gemini REST stream).
+3. Dakshan AI communicates directly with Groq with ultra-low latency streaming text completions.
 
 ---
 
@@ -87,8 +87,8 @@ Edit `.env.local` at the root of the project:
 
 | Variable | Default | Description |
 |---|---|---|
-| `GEMINI_API_KEY` | *(required)* | Google Gemini API key from Google AI Studio |
-| `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini model name (e.g. `gemini-2.5-flash`, `gemini-2.5-pro`) |
+| `GROQ_API_KEY` | *(required)* | Groq API key from https://console.groq.com/keys |
+| `GROQ_MODEL` | `llama-3.3-70b-versatile` | Groq model name (`llama-3.3-70b-versatile`, `llama-3.1-8b-instant`) |
 | `LLM_TEMPERATURE` | `0.7` | Sampling temperature for natural conversational flow |
 | `LLM_TIMEOUT_MS` | `45000` | Request timeout in milliseconds (45 seconds) |
 

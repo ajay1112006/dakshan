@@ -1,9 +1,8 @@
 /**
- * Google Gemini AI Provider Module
+ * Groq AI Provider Module
  *
- * Exclusively powered by Google Gemini API (via GEMINI_API_KEY).
- * High-performance, streaming chat completion with automatic failover
- * between Google's OpenAI-compatible endpoint and native Gemini streamGenerateContent.
+ * Exclusively powered by Groq's ultra-fast LPU inference API (via GROQ_API_KEY).
+ * Supports flagship open models like llama-3.3-70b-versatile and llama-3.1-8b-instant.
  */
 
 import { ServerHealthStatus } from './types';
@@ -17,7 +16,7 @@ export class LLMConnectionError extends Error {
   public baseUrl: string;
   public details?: string;
 
-  constructor(message: string, baseUrl: string = 'Google Gemini API', details?: string) {
+  constructor(message: string, baseUrl: string = 'Groq Cloud API', details?: string) {
     super(message);
     this.name = 'LLMConnectionError';
     this.baseUrl = baseUrl;
@@ -26,37 +25,39 @@ export class LLMConnectionError extends Error {
 }
 
 /**
- * Automatically maps deprecated model names to the active stable Gemini model.
+ * Normalizes and validates the selected Groq model.
  */
-export function sanitizeGeminiModel(configuredModel?: string): string {
-  if (!configuredModel) return 'gemini-2.5-flash';
-  const clean = configuredModel.trim().replace(/^models\//, '');
-  const deprecated = [
-    'gemini-1.5-flash',
-    'gemini-1.5-flash-latest',
-    'gemini-1.5-pro',
-    'gemini-1.5-pro-latest',
-    'gemini-2.0-flash',
-    'gemini-1.0-pro',
-    'default',
-  ];
-  if (deprecated.includes(clean)) {
-    return 'gemini-2.5-flash';
-  }
+export function sanitizeGroqModel(configuredModel?: string): string {
+  if (!configuredModel) return 'llama-3.3-70b-versatile';
+  const clean = configuredModel.trim();
+  // Map any outdated or shorthand model names
+  if (clean === 'llama3-70b' || clean === 'llama-3-70b') return 'llama-3.3-70b-versatile';
+  if (clean === 'llama3-8b' || clean === 'llama-3-8b') return 'llama-3.1-8b-instant';
   return clean;
 }
 
 /**
- * Retrieves Gemini configuration from environment variables.
+ * Retrieves configuration from environment variables.
+ * Prioritizes GROQ_API_KEY.
  */
 export function getLLMConfig() {
-  const apiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
-  const rawModel = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-  const model = sanitizeGeminiModel(rawModel);
+  const groqApiKey = (process.env.GROQ_API_KEY || '').trim();
+  const geminiApiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
+
+  // Primary: Groq; Fallback: Gemini (if Groq key is absent)
+  const isGroq = groqApiKey.length > 0 || geminiApiKey.length === 0;
+  const apiKey = isGroq ? groqApiKey : geminiApiKey;
+
+  const rawModel = isGroq
+    ? (process.env.GROQ_MODEL || 'llama-3.3-70b-versatile')
+    : (process.env.GEMINI_MODEL || 'gemini-2.5-flash');
+
+  const model = isGroq ? sanitizeGroqModel(rawModel) : rawModel;
   const temperature = parseFloat(process.env.LLM_TEMPERATURE || '0.7');
   const timeoutMs = parseInt(process.env.LLM_TIMEOUT_MS || '45000', 10);
 
   return {
+    isGroq,
     apiKey,
     model,
     temperature,
@@ -66,29 +67,43 @@ export function getLLMConfig() {
 }
 
 /**
- * Streams a chat completion directly from Google Gemini API.
+ * Streams chat completion from Groq API (or Gemini as failover).
  */
 export async function streamChatCompletion(messages: LLMMessage[]): Promise<ReadableStream<Uint8Array>> {
   const config = getLLMConfig();
 
   if (!config.hasKey) {
     throw new LLMConnectionError(
-      'Missing GEMINI_API_KEY. Please set your Gemini API key in your environment variables.',
-      'Google Gemini API'
+      'Missing GROQ_API_KEY. Please set your Groq API key in .env.local or your Vercel Environment Variables.',
+      'Groq Cloud API'
     );
   }
 
+  if (config.isGroq) {
+    return streamGroq(messages, config);
+  }
+
+  return streamGemini(messages, config);
+}
+
+/**
+ * Streams completion from Groq API with automatic model failover.
+ */
+async function streamGroq(
+  messages: LLMMessage[],
+  config: ReturnType<typeof getLLMConfig>
+): Promise<ReadableStream<Uint8Array>> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), config.timeoutMs);
 
   let lastErrorDetail = '';
-  const candidateModels = Array.from(new Set([config.model, 'gemini-2.5-flash']));
+  // Try candidate models: llama-3.3-70b-versatile first, then llama-3.1-8b-instant
+  const candidateModels = Array.from(new Set([config.model, 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant']));
 
   for (const modelToTry of candidateModels) {
-    // 1. Attempt Google's official OpenAI-compatible endpoint
     try {
-      const openAiEndpoint = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
-      const res = await fetch(openAiEndpoint, {
+      const groqEndpoint = 'https://api.groq.com/openai/v1/chat/completions';
+      const res = await fetch(groqEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -109,73 +124,77 @@ export async function streamChatCompletion(messages: LLMMessage[]): Promise<Read
       }
 
       const errText = await res.text().catch(() => '');
-      lastErrorDetail = `OpenAI endpoint (${modelToTry}) status ${res.status}: ${errText}`;
+      lastErrorDetail = `Groq API (${modelToTry}) status ${res.status}: ${errText}`;
+      console.warn('Groq model attempt failed, trying next candidate:', lastErrorDetail);
     } catch (err: unknown) {
       lastErrorDetail = err instanceof Error ? err.message : String(err);
-    }
-
-    // 2. Fallback to Google's native Gemini streamGenerateContent REST endpoint
-    try {
-      const nativeEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelToTry}:streamGenerateContent?alt=sse&key=${config.apiKey}`;
-
-      const systemMsg = messages.find((m) => m.role === 'system');
-      const chatMsgs = messages.filter((m) => m.role !== 'system');
-
-      const nativeBody: Record<string, unknown> = {
-        contents: chatMsgs.map((m) => ({
-          role: m.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: m.content }],
-        })),
-        generationConfig: {
-          temperature: config.temperature,
-        },
-      };
-
-      if (systemMsg) {
-        nativeBody.system_instruction = {
-          parts: [{ text: systemMsg.content }],
-        };
-      }
-
-      const nativeRes = await fetch(nativeEndpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(nativeBody),
-        signal: controller.signal,
-      });
-
-      if (nativeRes.ok && nativeRes.body) {
-        clearTimeout(timeoutId);
-        return parseSSEStream(nativeRes.body);
-      }
-
-      const nativeErr = await nativeRes.text().catch(() => '');
-      lastErrorDetail = `Native REST (${modelToTry}) status ${nativeRes.status}: ${nativeErr}`;
-    } catch (err: unknown) {
-      lastErrorDetail = err instanceof Error ? err.message : String(err);
+      console.warn('Groq fetch error:', lastErrorDetail);
     }
   }
 
   clearTimeout(timeoutId);
 
-  let friendlyMessage = 'Failed to communicate with Google Gemini API. Please check your GEMINI_API_KEY.';
-  if (lastErrorDetail.includes('429') || lastErrorDetail.includes('RESOURCE_EXHAUSTED') || lastErrorDetail.toLowerCase().includes('quota')) {
-    friendlyMessage = 'Google Gemini API quota exceeded (Limit: 20 requests/day on free tier). Please generate a new free API key at https://aistudio.google.com/app/apikey or upgrade your quota.';
-  } else if (lastErrorDetail.includes('API_KEY_INVALID') || (lastErrorDetail.includes('400') && lastErrorDetail.includes('API key not valid'))) {
-    friendlyMessage = 'Invalid Gemini API key. Please verify your GEMINI_API_KEY in your environment variables.';
-  } else if (lastErrorDetail.includes('404')) {
-    friendlyMessage = 'Configured Gemini model was not found (404). Falling back to gemini-2.5-flash.';
+  let friendlyMessage = 'Failed to communicate with Groq API. Please check your GROQ_API_KEY.';
+  if (lastErrorDetail.includes('429') || lastErrorDetail.includes('rate_limit_exceeded')) {
+    friendlyMessage = 'Groq API rate limit exceeded. Please wait a moment and click Retry.';
+  } else if (lastErrorDetail.includes('401') || lastErrorDetail.includes('invalid_api_key')) {
+    friendlyMessage = 'Invalid Groq API key. Please check your GROQ_API_KEY in your environment variables.';
+  } else if (lastErrorDetail.includes('404') || lastErrorDetail.includes('model_not_found')) {
+    friendlyMessage = 'Configured Groq model was not found. Please verify your GROQ_MODEL setting.';
   }
 
   throw new LLMConnectionError(
     friendlyMessage,
-    'Google Gemini API',
+    'Groq Cloud API',
     lastErrorDetail
   );
 }
 
 /**
- * Universal SSE stream parser supporting both OpenAI chunks and Gemini candidate chunks.
+ * Fallback to Gemini if user still uses GEMINI_API_KEY.
+ */
+async function streamGemini(
+  messages: LLMMessage[],
+  config: ReturnType<typeof getLLMConfig>
+): Promise<ReadableStream<Uint8Array>> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), config.timeoutMs);
+
+  try {
+    const endpoint = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'gemini-2.5-flash',
+        messages,
+        temperature: config.temperature,
+        stream: true,
+      }),
+      signal: controller.signal,
+    });
+
+    if (res.ok && res.body) {
+      clearTimeout(timeoutId);
+      return parseSSEStream(res.body);
+    }
+
+    const err = await res.text().catch(() => '');
+    throw new Error(err);
+  } catch (err: unknown) {
+    clearTimeout(timeoutId);
+    throw new LLMConnectionError(
+      'Failed to communicate with AI API: ' + (err instanceof Error ? err.message : String(err)),
+      'Google Gemini API'
+    );
+  }
+}
+
+/**
+ * Universal SSE stream parser supporting OpenAI-compatible delta streams (Groq & OpenAI).
  */
 function parseSSEStream(body: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
   const reader = body.getReader();
@@ -208,15 +227,9 @@ function parseSSEStream(body: ReadableStream<Uint8Array>): ReadableStream<Uint8A
               const dataStr = trimmed.slice(6);
               try {
                 const parsed = JSON.parse(dataStr);
-                let contentChunk: string | undefined;
-
-                if (parsed.choices?.[0]?.delta?.content !== undefined) {
-                  contentChunk = parsed.choices[0].delta.content;
-                } else if (parsed.candidates?.[0]?.content?.parts) {
-                  contentChunk = parsed.candidates[0].content.parts
-                    .map((p: { text?: string }) => p.text || '')
-                    .join('');
-                }
+                const contentChunk =
+                  parsed.choices?.[0]?.delta?.content ||
+                  parsed.candidates?.[0]?.content?.parts?.[0]?.text;
 
                 if (contentChunk) {
                   streamController.enqueue(encoder.encode(contentChunk));
@@ -231,15 +244,9 @@ function parseSSEStream(body: ReadableStream<Uint8Array>): ReadableStream<Uint8A
         if (buffer.trim().startsWith('data: ') && buffer.trim() !== 'data: [DONE]') {
           try {
             const parsed = JSON.parse(buffer.trim().slice(6));
-            let contentChunk: string | undefined;
-
-            if (parsed.choices?.[0]?.delta?.content !== undefined) {
-              contentChunk = parsed.choices[0].delta.content;
-            } else if (parsed.candidates?.[0]?.content?.parts) {
-              contentChunk = parsed.candidates[0].content.parts
-                .map((p: { text?: string }) => p.text || '')
-                .join('');
-            }
+            const contentChunk =
+              parsed.choices?.[0]?.delta?.content ||
+              parsed.candidates?.[0]?.content?.parts?.[0]?.text;
 
             if (contentChunk) {
               streamController.enqueue(encoder.encode(contentChunk));
@@ -260,7 +267,7 @@ function parseSSEStream(body: ReadableStream<Uint8Array>): ReadableStream<Uint8A
 }
 
 /**
- * Health check to verify Google Gemini connectivity.
+ * Health check to verify Groq API connectivity.
  */
 export async function checkLLMServerHealth(): Promise<ServerHealthStatus> {
   const config = getLLMConfig();
@@ -269,43 +276,84 @@ export async function checkLLMServerHealth(): Promise<ServerHealthStatus> {
   if (!config.hasKey) {
     return {
       status: 'unreachable',
-      providerUrl: 'Google Gemini API',
+      providerUrl: 'Groq Cloud API',
       model: config.model,
-      message: 'GEMINI_API_KEY is not configured',
+      message: 'GROQ_API_KEY is not configured',
     };
   }
 
-  const candidateModels = Array.from(new Set([config.model, 'gemini-2.5-flash']));
-
-  for (const modelToTry of candidateModels) {
+  if (config.isGroq) {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 4000);
 
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${modelToTry}?key=${config.apiKey}`,
-        { method: 'GET', signal: controller.signal }
-      ).finally(() => clearTimeout(timeoutId));
+      const res = await fetch('https://api.groq.com/openai/v1/models', {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${config.apiKey}`,
+        },
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeoutId));
 
       const latencyMs = Date.now() - startTime;
       if (res.ok) {
         return {
           status: 'connected',
-          providerUrl: 'Google Gemini Cloud API',
-          model: modelToTry,
+          providerUrl: 'Groq Cloud LPU API',
+          model: config.model,
           latencyMs,
-          message: `Connected to Google Gemini (${modelToTry}, ${latencyMs}ms)`,
+          message: `Connected to Groq (${config.model}, ${latencyMs}ms)`,
         };
       }
+
+      return {
+        status: 'unreachable',
+        providerUrl: 'Groq Cloud LPU API',
+        model: config.model,
+        message: `Groq API returned status ${res.status}`,
+      };
     } catch {
-      // try next candidate
+      return {
+        status: 'unreachable',
+        providerUrl: 'Groq Cloud LPU API',
+        model: config.model,
+        message: 'Could not connect to Groq API (check GROQ_API_KEY)',
+      };
     }
   }
 
-  return {
-    status: 'unreachable',
-    providerUrl: 'Google Gemini Cloud API',
-    model: config.model,
-    message: 'Could not connect to Google Gemini API (check API key)',
-  };
+  // Fallback Gemini health check
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash?key=${config.apiKey}`,
+      { method: 'GET', signal: controller.signal }
+    ).finally(() => clearTimeout(timeoutId));
+
+    const latencyMs = Date.now() - startTime;
+    if (res.ok) {
+      return {
+        status: 'connected',
+        providerUrl: 'Google Gemini Cloud API',
+        model: 'gemini-2.5-flash',
+        latencyMs,
+        message: `Connected to Google Gemini (${latencyMs}ms)`,
+      };
+    }
+    return {
+      status: 'unreachable',
+      providerUrl: 'Google Gemini Cloud API',
+      model: 'gemini-2.5-flash',
+      message: `Gemini API returned status ${res.status}`,
+    };
+  } catch {
+    return {
+      status: 'unreachable',
+      providerUrl: 'Google Gemini Cloud API',
+      model: 'gemini-2.5-flash',
+      message: 'Could not connect to Google Gemini API',
+    };
+  }
 }

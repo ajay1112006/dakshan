@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
           error: error.message,
           baseUrl: error.baseUrl,
           details: error.details,
-          hint: 'Verify your GEMINI_API_KEY in .env.local or your Vercel Environment Variables dashboard.',
+          hint: 'Verify your GROQ_API_KEY in .env.local or your Vercel Environment Variables dashboard.',
         },
         { status: 503 }
       );
