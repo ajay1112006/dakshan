@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Sprout, RotateCcw } from 'lucide-react';
+import { Sparkles, RotateCcw } from 'lucide-react';
 
 interface ChatHeaderProps {
   onReset: () => void;
@@ -16,11 +16,11 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
     <header className="chatbox-header">
       <div className="brand">
         <div className="brand-icon-wrapper" aria-hidden="true">
-          <Sprout size={18} />
+          <Sparkles size={16} />
         </div>
         <div className="brand-title">
           <span>Dakshan AI</span>
-          <span className="status-dot" title="Live GGUF Model Connected" />
+          <span className="status-dot" title="Powered by Google Gemini" />
         </div>
       </div>
 

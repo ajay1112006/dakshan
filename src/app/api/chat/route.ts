@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { streamChatCompletion, LLMConnectionError } from '@/lib/llm';
-import { WASTE_AWARENESS_SYSTEM_PROMPT } from '@/lib/system-prompt';
+import { DAKSHAN_SYSTEM_PROMPT } from '@/lib/system-prompt';
 
 export async function POST(req: NextRequest) {
   try {
@@ -32,10 +32,10 @@ export async function POST(req: NextRequest) {
       const content = typeof msg.content === 'string' ? msg.content.trim() : '';
 
       if ((role === 'user' || role === 'assistant') && content.length > 0) {
-        // Enforce max individual message length to avoid memory strain
+        // Safe message length limit to avoid buffer issues
         sanitizedMessages.push({
           role,
-          content: content.slice(0, 4000),
+          content: content.slice(0, 10000),
         });
       }
     }
@@ -56,26 +56,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Server-side scope enforcement: check if clearly off-topic
-    if (isClearlyOffTopic(lastMessage.content)) {
-      const refusalStream = createRefusalStream();
-      return new Response(refusalStream, {
-        headers: {
-          'Content-Type': 'text/plain; charset=utf-8',
-          'Cache-Control': 'no-cache, no-transform',
-          'X-Content-Type-Options': 'nosniff',
-        },
-      });
-    }
-
-    // Prepend the server-side system prompt.
-    // The client NEVER receives or defines this system prompt.
+    // Prepend the system prompt to guide the assistant
     const fullConversation = [
-      { role: 'system' as const, content: WASTE_AWARENESS_SYSTEM_PROMPT },
+      { role: 'system' as const, content: DAKSHAN_SYSTEM_PROMPT },
       ...sanitizedMessages,
     ];
 
-    // Stream response from the LLM provider
+    // Stream real, dynamic response directly from the LLM provider (Gemini or local server)
     const stream = await streamChatCompletion(fullConversation);
 
     return new Response(stream, {
@@ -94,7 +81,7 @@ export async function POST(req: NextRequest) {
           error: error.message,
           baseUrl: error.baseUrl,
           details: error.details,
-          hint: 'Verify that your local GGUF server (e.g., llama.cpp server or Ollama) is running on the specified URL.',
+          hint: 'Please check your Gemini API key in .env.local or ensure your local LLM server is running.',
         },
         { status: 503 }
       );
@@ -107,58 +94,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-
-/**
- * Checks if a user's question falls clearly outside waste management.
- */
-function isClearlyOffTopic(query: string): boolean {
-  const lower = query.toLowerCase().trim();
-
-  // If query mentions any waste, sorting, disposal, or materials term, it's ON topic
-  const wasteKeywords = [
-    'waste', 'recycle', 'recycling', 'compost', 'trash', 'garbage', 'bin', 'dispos',
-    'landfill', 'hazard', 'battery', 'batteries', 'plastic', 'cardboard', 'paper', 'glass',
-    'metal', 'can', 'aluminum', 'bottle', 'box', 'food', 'scrap', 'organic', 'soil',
-    'electronics', 'e-waste', 'styrofoam', 'wrap', 'carton', 'jar', 'tin', 'leaves',
-    'yard', 'eco', 'sustainable', 'environment', 'pollut', 'sorting', 'sort', 'decompose',
-    'biodegrad', 'dump', 'rubbish', 'cup', 'lid', 'clean', 'rinse'
-  ];
-
-  if (wasteKeywords.some((w) => lower.includes(w))) {
-    return false;
-  }
-
-  // Obvious non-waste domain keywords
-  const offTopicRegexes = [
-    /\b(python|javascript|typescript|c\+\+|java|html|css|sql|react|node|rust|golang|code|coding|function|algorithm|fibonacci|binary search|regex)\b/i,
-    /\b(crypto|bitcoin|stock market|forex|investing|wall street)\b/i,
-    /\b(president|prime minister|election|senate|congress|democrat|republican)\b/i,
-    /\b(celebrity|actor|movie recommendation|song lyrics|sing a song|write a poem|write an essay|joke)\b/i,
-    /\b(capital of|who won|world cup|super bowl|nba|football score)\b/i,
-    /\b(math|calculus|derivative|integral|solve for x|equation)\b/i,
-  ];
-
-  return offTopicRegexes.some((regex) => regex.test(lower));
-}
-
-/**
- * Streams a polite redirection message back to the client.
- */
-function createRefusalStream(): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-  const refusalText =
-    "I am an AI assistant dedicated specifically to waste awareness and sorting. I cannot help with topics outside of waste management, but I would be glad to help you find the right bin, recycling method, or disposal option for any household material or product!\n\nFeel free to ask about items like pizza boxes, electronics, batteries, plastics, or composting.";
-
-  const chunks = refusalText.match(/.{1,14}/g) || [refusalText];
-
-  return new ReadableStream<Uint8Array>({
-    async start(controller) {
-      for (const chunk of chunks) {
-        controller.enqueue(encoder.encode(chunk));
-        await new Promise((resolve) => setTimeout(resolve, 15));
-      }
-      controller.close();
-    },
-  });
-}
-

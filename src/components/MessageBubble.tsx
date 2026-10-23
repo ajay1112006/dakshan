@@ -60,6 +60,9 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreami
     const elements: React.ReactNode[] = [];
     let listItems: string[] = [];
     let isOrdered = false;
+    let inCodeBlock = false;
+    let codeBlockContent: string[] = [];
+    let codeLanguage = '';
 
     const flushList = () => {
       if (listItems.length > 0) {
@@ -87,6 +90,34 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreami
 
     lines.forEach((line, index) => {
       const trimmed = line.trim();
+
+      // Fenced code blocks (```python, ```js, etc.)
+      if (trimmed.startsWith('```')) {
+        flushList();
+        if (!inCodeBlock) {
+          inCodeBlock = true;
+          codeLanguage = trimmed.slice(3).trim();
+          codeBlockContent = [];
+        } else {
+          inCodeBlock = false;
+          elements.push(
+            <div key={`code-block-${index}`} className="code-container">
+              {codeLanguage && <div className="code-lang-tag">{codeLanguage}</div>}
+              <pre className="code-block">
+                <code>{codeBlockContent.join('\n')}</code>
+              </pre>
+            </div>
+          );
+          codeBlockContent = [];
+          codeLanguage = '';
+        }
+        return;
+      }
+
+      if (inCodeBlock) {
+        codeBlockContent.push(line);
+        return;
+      }
 
       // Headings (### , ## , # )
       const headingMatch = trimmed.match(/^(#{1,3})\s+(.*)/);
@@ -146,6 +177,17 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreami
     });
 
     flushList();
+
+    if (inCodeBlock && codeBlockContent.length > 0) {
+      elements.push(
+        <div key="code-block-tail" className="code-container">
+          {codeLanguage && <div className="code-lang-tag">{codeLanguage}</div>}
+          <pre className="code-block">
+            <code>{codeBlockContent.join('\n')}</code>
+          </pre>
+        </div>
+      );
+    }
 
     return elements;
   };

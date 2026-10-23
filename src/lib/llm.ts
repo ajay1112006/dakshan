@@ -2,9 +2,8 @@
  * Swappable LLM Provider Module
  *
  * Supports:
- * 1. Google Gemini API (via GEMINI_API_KEY with auto-failover between OpenAI-compat and Native REST endpoints)
- * 2. Local GGUF model servers (llama.cpp's `llama-server`, Ollama, LM Studio) exposing OpenAI-compatible endpoints
- * 3. Built-in intelligent waste awareness fallback when servers are offline
+ * 1. Google Gemini API (via GEMINI_API_KEY or GOOGLE_API_KEY) with native streaming
+ * 2. Local GGUF model servers (llama.cpp server, Ollama, LM Studio) via OpenAI-compatible endpoints
  */
 
 import { generateMockWasteResponse } from './mock-llm';
@@ -28,14 +27,16 @@ export class LLMConnectionError extends Error {
 }
 
 /**
- * Retrieves sanitized configuration from environment variables with safe defaults.
+ * Retrieves configuration from environment variables with safe defaults.
+ * Prioritizes Google Gemini when GEMINI_API_KEY is configured.
  */
 export function getLLMConfig() {
   const geminiApiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
   const hasGeminiKey = geminiApiKey.length > 0;
 
-  // If user provided a Gemini key and hasn't explicitly pointed to a local server, use Gemini
-  const isGemini = hasGeminiKey && (!process.env.LLM_BASE_URL || process.env.LLM_BASE_URL.includes('googleapis.com'));
+  // Prioritize Gemini if a valid key is provided, unless FORCE_LOCAL_LLM is explicitly true
+  const forceLocal = process.env.FORCE_LOCAL_LLM === 'true' || process.env.USE_LOCAL_LLM === 'true';
+  const isGemini = hasGeminiKey && !forceLocal;
 
   const defaultBaseUrl = isGemini
     ? 'https://generativelanguage.googleapis.com/v1beta/openai'
@@ -45,12 +46,20 @@ export function getLLMConfig() {
     ? (process.env.GEMINI_MODEL || 'gemini-2.5-flash')
     : (process.env.LLM_MODEL || 'default');
 
-  const baseUrl = (process.env.LLM_BASE_URL || defaultBaseUrl).replace(/\/+$/, '');
-  const model = process.env.LLM_MODEL || defaultModel;
+  const baseUrl = isGemini
+    ? 'https://generativelanguage.googleapis.com/v1beta/openai'
+    : (process.env.LLM_BASE_URL || defaultBaseUrl).replace(/\/+$/, '');
+
+  const model = isGemini
+    ? (process.env.GEMINI_MODEL || 'gemini-2.5-flash')
+    : (process.env.LLM_MODEL || defaultModel);
+
   const apiKey = isGemini ? geminiApiKey : (process.env.LLM_API_KEY || 'not-needed');
-  const temperature = parseFloat(process.env.LLM_TEMPERATURE || '0.2');
-  const timeoutMs = parseInt(process.env.LLM_TIMEOUT_MS || '30000', 10);
-  const enableFallback = process.env.ENABLE_OFFLINE_FALLBACK !== 'false';
+  const temperature = parseFloat(process.env.LLM_TEMPERATURE || (isGemini ? '0.7' : '0.2'));
+  const timeoutMs = parseInt(process.env.LLM_TIMEOUT_MS || '45000', 10);
+
+  // Fallback is strictly disabled for Gemini so user gets real, dynamic responses and never pre-edited texts
+  const enableFallback = !isGemini && process.env.ENABLE_OFFLINE_FALLBACK === 'true';
 
   return {
     isGemini,
@@ -65,36 +74,36 @@ export function getLLMConfig() {
 }
 
 /**
- * Streams a chat completion response from Google Gemini or the local OpenAI-compatible inference server.
+ * Streams a chat completion response from Google Gemini or the local inference server.
  * Returns a standard ReadableStream of text chunks.
  */
 export async function streamChatCompletion(messages: LLMMessage[]): Promise<ReadableStream<Uint8Array>> {
   const config = getLLMConfig();
 
-  // If Gemini API is configured, use Gemini stream pipeline
   if (config.isGemini) {
-    return streamGeminiWithFallback(messages, config);
+    return streamGemini(messages, config);
   }
 
-  // Otherwise, use local / custom OpenAI-compatible server endpoint
   return streamOpenAICompat(messages, config);
 }
 
 /**
  * Streams response from Google Gemini.
- * Attempts Google's official OpenAI-compatible endpoint first; automatically fails over
- * to Google's native streamGenerateContent REST API if needed.
+ * Tries Google's official OpenAI-compatible endpoint first, then automatically fails over
+ * to Google's native Gemini streamGenerateContent REST API if needed.
  */
-async function streamGeminiWithFallback(
+async function streamGemini(
   messages: LLMMessage[],
   config: ReturnType<typeof getLLMConfig>
 ): Promise<ReadableStream<Uint8Array>> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), config.timeoutMs);
 
+  let lastErrorDetail = '';
+
   // 1. Attempt Google's official OpenAI-compatible endpoint
   try {
-    const openAiEndpoint = `${config.baseUrl}/chat/completions`;
+    const openAiEndpoint = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
     const res = await fetch(openAiEndpoint, {
       method: 'POST',
       headers: {
@@ -114,8 +123,13 @@ async function streamGeminiWithFallback(
       clearTimeout(timeoutId);
       return parseSSEStream(res.body);
     }
-  } catch {
-    // Fall through to native Gemini endpoint
+
+    const errText = await res.text().catch(() => '');
+    lastErrorDetail = `OpenAI endpoint status ${res.status}: ${errText}`;
+    console.warn('Gemini OpenAI endpoint failed, trying native REST API:', lastErrorDetail);
+  } catch (err: unknown) {
+    lastErrorDetail = err instanceof Error ? err.message : String(err);
+    console.warn('Gemini OpenAI endpoint error, falling back to native REST API:', lastErrorDetail);
   }
 
   // 2. Attempt Google's native Gemini streamGenerateContent REST endpoint
@@ -153,24 +167,20 @@ async function streamGeminiWithFallback(
       clearTimeout(timeoutId);
       return parseSSEStream(nativeRes.body);
     }
+
+    const nativeErr = await nativeRes.text().catch(() => '');
+    lastErrorDetail = `Native REST status ${nativeRes.status}: ${nativeErr}`;
   } catch (err: unknown) {
-    clearTimeout(timeoutId);
-    if (config.enableFallback) {
-      const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user')?.content || '';
-      return createFallbackStream(lastUserMsg);
-    }
-    throw new LLMConnectionError('Failed to connect to Google Gemini API', 'Google Gemini', String(err));
+    lastErrorDetail = err instanceof Error ? err.message : String(err);
   } finally {
     clearTimeout(timeoutId);
   }
 
-  // If Gemini calls failed and fallback is enabled
-  if (config.enableFallback) {
-    const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user')?.content || '';
-    return createFallbackStream(lastUserMsg);
-  }
-
-  throw new LLMConnectionError('Could not reach Google Gemini API or local inference server', config.baseUrl);
+  throw new LLMConnectionError(
+    `Failed to get response from Google Gemini API. Please check your API key and connection.`,
+    'Google Gemini Cloud API',
+    lastErrorDetail
+  );
 }
 
 /**
@@ -204,14 +214,13 @@ async function streamOpenAICompat(
     clearTimeout(timeoutId);
     const errorMsg = err instanceof Error ? err.message : String(err);
 
-    // If local inference server is offline and fallback is enabled, deliver intelligent fallback
     if (config.enableFallback) {
       const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user')?.content || '';
       return createFallbackStream(lastUserMsg);
     }
 
     throw new LLMConnectionError(
-      `Could not reach the local GGUF inference server at "${endpoint}". Please make sure your server (e.g. llama-server or Ollama) is running.`,
+      `Could not reach the local LLM server at "${endpoint}". Please make sure your server is running.`,
       config.baseUrl,
       errorMsg
     );
@@ -274,10 +283,15 @@ function parseSSEStream(body: ReadableStream<Uint8Array>): ReadableStream<Uint8A
               const dataStr = trimmed.slice(6);
               try {
                 const parsed = JSON.parse(dataStr);
-                // Supports both OpenAI (choices[0].delta.content) and native Gemini (candidates[0].content.parts[0].text)
-                const contentChunk =
-                  parsed.choices?.[0]?.delta?.content ||
-                  parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+                let contentChunk: string | undefined;
+
+                if (parsed.choices?.[0]?.delta?.content !== undefined) {
+                  contentChunk = parsed.choices[0].delta.content;
+                } else if (parsed.candidates?.[0]?.content?.parts) {
+                  contentChunk = parsed.candidates[0].content.parts
+                    .map((p: { text?: string }) => p.text || '')
+                    .join('');
+                }
 
                 if (contentChunk) {
                   streamController.enqueue(encoder.encode(contentChunk));
@@ -293,9 +307,15 @@ function parseSSEStream(body: ReadableStream<Uint8Array>): ReadableStream<Uint8A
         if (buffer.trim().startsWith('data: ') && buffer.trim() !== 'data: [DONE]') {
           try {
             const parsed = JSON.parse(buffer.trim().slice(6));
-            const contentChunk =
-              parsed.choices?.[0]?.delta?.content ||
-              parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+            let contentChunk: string | undefined;
+
+            if (parsed.choices?.[0]?.delta?.content !== undefined) {
+              contentChunk = parsed.choices[0].delta.content;
+            } else if (parsed.candidates?.[0]?.content?.parts) {
+              contentChunk = parsed.candidates[0].content.parts
+                .map((p: { text?: string }) => p.text || '')
+                .join('');
+            }
 
             if (contentChunk) {
               streamController.enqueue(encoder.encode(contentChunk));
@@ -316,21 +336,18 @@ function parseSSEStream(body: ReadableStream<Uint8Array>): ReadableStream<Uint8A
 }
 
 /**
- * Creates a streaming response from the fallback generator.
- * Streams clean, direct responses without intrusive debug or disclaimer notices.
+ * Creates a streaming response from the fallback generator for offline testing.
  */
 function createFallbackStream(userQuery: string): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const content = generateMockWasteResponse(userQuery);
 
-  // Split into small chunks to simulate natural streaming cadence
   const chunks = content.match(/.{1,12}/g) || [content];
 
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       for (const chunk of chunks) {
         controller.enqueue(encoder.encode(chunk));
-        // Micro-delay between chunks to provide realistic streaming visual
         await new Promise((resolve) => setTimeout(resolve, 15));
       }
       controller.close();
@@ -339,17 +356,16 @@ function createFallbackStream(userQuery: string): ReadableStream<Uint8Array> {
 }
 
 /**
- * Health check to verify whether Google Gemini or the local GGUF server is reachable.
+ * Health check to verify whether Google Gemini or the local server is reachable.
  */
 export async function checkLLMServerHealth(): Promise<ServerHealthStatus> {
   const config = getLLMConfig();
   const startTime = Date.now();
 
-  // If Gemini is active
   if (config.isGemini) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3500);
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
       const model = config.model.includes('gemini') ? config.model : 'gemini-2.5-flash';
 
       const res = await fetch(
@@ -368,22 +384,22 @@ export async function checkLLMServerHealth(): Promise<ServerHealthStatus> {
         };
       }
       return {
-        status: config.enableFallback ? 'mock_mode' : 'unreachable',
+        status: 'unreachable',
         providerUrl: 'Google Gemini Cloud API',
         model,
         message: `Gemini API returned status ${res.status}`,
       };
     } catch {
       return {
-        status: config.enableFallback ? 'mock_mode' : 'unreachable',
+        status: 'unreachable',
         providerUrl: 'Google Gemini Cloud API',
         model: config.model,
-        message: 'Could not connect to Google Gemini API (offline fallback active)',
+        message: 'Could not connect to Google Gemini API',
       };
     }
   }
 
-  // Local / OpenAI-compatible server health check
+  // Local OpenAI-compatible server health check
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 2500);
@@ -404,7 +420,7 @@ export async function checkLLMServerHealth(): Promise<ServerHealthStatus> {
         providerUrl: config.baseUrl,
         model: config.model,
         latencyMs,
-        message: `Successfully connected to local GGUF server (${latencyMs}ms)`,
+        message: `Connected to local server (${latencyMs}ms)`,
       };
     }
 
@@ -419,7 +435,7 @@ export async function checkLLMServerHealth(): Promise<ServerHealthStatus> {
       status: config.enableFallback ? 'mock_mode' : 'unreachable',
       providerUrl: config.baseUrl,
       model: config.model,
-      message: `Could not connect to ${config.baseUrl} (local fallback enabled)`,
+      message: `Could not connect to ${config.baseUrl}`,
     };
   }
 }

@@ -90,11 +90,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Ask how to sort any item (e.g. greasy pizza box, batteries, plastic bags)..."
+          placeholder="Ask Dakshan AI anything (ideas, coding, questions, eco advice)..."
           rows={1}
           className="chat-textarea"
           disabled={isLoading}
-          aria-label="Ask about waste sorting"
+          aria-label="Ask Dakshan AI a question"
         />
 
         <div className="input-actions">

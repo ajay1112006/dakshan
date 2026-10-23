@@ -3,7 +3,7 @@
 import React, { useEffect, useRef } from 'react';
 import { ChatMessage } from '@/lib/types';
 import { MessageBubble } from './MessageBubble';
-import { Bot, Sprout } from 'lucide-react';
+import { Bot, Sparkles } from 'lucide-react';
 
 interface MessageListProps {
   messages: ChatMessage[];
@@ -30,34 +30,41 @@ export const MessageList: React.FC<MessageListProps> = ({
       <div className="chat-viewport empty-viewport">
         <div className="empty-chat-state">
           <div className="empty-icon-circle" aria-hidden="true">
-            <Sprout size={28} />
+            <Sparkles size={28} />
           </div>
-          <h2 className="empty-title">AI Waste Awareness Chat</h2>
+          <h2 className="empty-title">Dakshan AI Assistant</h2>
           <p className="empty-subtitle">
-            Ask how to sort any item, recycle properly, compost, or handle tricky waste.
+            Your conversational AI assistant powered by Gemini. Ask anything, brainstorm ideas, write code, or ask for eco-friendly waste advice.
           </p>
 
           <div className="empty-suggestion-chips">
             <button
               type="button"
               className="chip-btn"
+              onClick={() => onSelectPrompt('Tell me a fascinating fact about the universe.')}
+            >
+              ✨ Universe fact
+            </button>
+            <button
+              type="button"
+              className="chip-btn"
               onClick={() => onSelectPrompt('Where does a used pizza box go?')}
             >
-              🍕 Used pizza box
+              🍕 Pizza box sorting
             </button>
             <button
               type="button"
               className="chip-btn"
-              onClick={() => onSelectPrompt('How do I safely dispose of old batteries?')}
+              onClick={() => onSelectPrompt('Write a clean Python script to fetch and format weather data.')}
             >
-              🔋 Old batteries
+              💻 Python script
             </button>
             <button
               type="button"
               className="chip-btn"
-              onClick={() => onSelectPrompt('Can I put plastic bags in curbside recycling?')}
+              onClick={() => onSelectPrompt('How do I safely dispose of lithium-ion batteries?')}
             >
-              🛍️ Plastic bags
+              🔋 Battery disposal
             </button>
           </div>
         </div>

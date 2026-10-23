@@ -2,15 +2,15 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Dakshan AI - Waste Awareness & Recycling Assistant',
+  title: 'Dakshan AI - Conversational AI Assistant',
   description:
-    'Ask questions about sorting trash, recycling rules, composting, hazardous materials, and e-waste disposal with AI guidance.',
+    'Intelligent conversational AI powered by Gemini. Ask questions, brainstorm, write code, and explore sustainable living with live AI guidance.',
   keywords: [
+    'gemini ai',
+    'conversational chatbot',
+    'ai assistant',
     'waste management',
     'recycling chatbot',
-    'compost guide',
-    'hazardous waste',
-    'e-waste disposal',
     'dakshan AI',
   ],
   authors: [{ name: 'Dakshan AI Team' }],
