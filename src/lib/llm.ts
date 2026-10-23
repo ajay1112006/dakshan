@@ -2,7 +2,8 @@
  * Groq AI Provider Module
  *
  * Exclusively powered by Groq's ultra-fast LPU inference API (via GROQ_API_KEY).
- * Supports flagship open models like llama-3.3-70b-versatile and llama-3.1-8b-instant.
+ * Automatically selects and fails over across high-performance models (openai/gpt-oss-120b,
+ * openai/gpt-oss-20b, qwen/qwen3.8-27b, and llama models).
  */
 
 import { ServerHealthStatus } from './types';
@@ -25,14 +26,18 @@ export class LLMConnectionError extends Error {
 }
 
 /**
- * Normalizes and validates the selected Groq model.
+ * Normalizes and maps the Groq model name to active available models.
  */
 export function sanitizeGroqModel(configuredModel?: string): string {
-  if (!configuredModel) return 'llama-3.3-70b-versatile';
+  if (!configuredModel) return 'openai/gpt-oss-120b';
   const clean = configuredModel.trim();
-  // Map any outdated or shorthand model names
-  if (clean === 'llama3-70b' || clean === 'llama-3-70b') return 'llama-3.3-70b-versatile';
-  if (clean === 'llama3-8b' || clean === 'llama-3-8b') return 'llama-3.1-8b-instant';
+  // Map any unavailable/restricted llama names to the active flagship models on Groq
+  if (clean === 'llama-3.3-70b-versatile' || clean === 'llama3-70b' || clean === 'llama-3-70b') {
+    return 'openai/gpt-oss-120b';
+  }
+  if (clean === 'llama-3.1-8b-instant' || clean === 'llama3-8b' || clean === 'llama-3-8b') {
+    return 'openai/gpt-oss-20b';
+  }
   return clean;
 }
 
@@ -49,7 +54,7 @@ export function getLLMConfig() {
   const apiKey = isGroq ? groqApiKey : geminiApiKey;
 
   const rawModel = isGroq
-    ? (process.env.GROQ_MODEL || 'llama-3.3-70b-versatile')
+    ? (process.env.GROQ_MODEL || 'openai/gpt-oss-120b')
     : (process.env.GEMINI_MODEL || 'gemini-2.5-flash');
 
   const model = isGroq ? sanitizeGroqModel(rawModel) : rawModel;
@@ -97,8 +102,17 @@ async function streamGroq(
   const timeoutId = setTimeout(() => controller.abort(), config.timeoutMs);
 
   let lastErrorDetail = '';
-  // Try candidate models: llama-3.3-70b-versatile first, then llama-3.1-8b-instant
-  const candidateModels = Array.from(new Set([config.model, 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant']));
+  // Try candidate models in prioritized order to guarantee immediate response
+  const candidateModels = Array.from(
+    new Set([
+      config.model,
+      'openai/gpt-oss-120b',
+      'openai/gpt-oss-20b',
+      'qwen/qwen3.8-27b',
+      'llama-3.3-70b-versatile',
+      'llama-3.1-8b-instant',
+    ])
+  );
 
   for (const modelToTry of candidateModels) {
     try {
