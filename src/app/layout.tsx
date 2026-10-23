@@ -2,9 +2,9 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Dakshan AI - Conversational AI Assistant',
+  title: 'Dakshan AI - Conversational AI',
   description:
-    'Intelligent conversational AI powered by Gemini. Ask questions, brainstorm, write code, and explore sustainable living with live AI guidance.',
+    'Intelligent conversational AI powered by Dakshan. Ask questions, brainstorm, write code, and explore sustainable living with live AI guidance.',
   keywords: [
     'gemini ai',
     'conversational chatbot',
