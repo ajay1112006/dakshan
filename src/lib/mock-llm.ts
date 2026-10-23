@@ -19,6 +19,33 @@ export function generateMockWasteResponse(userQuery: string): string {
 Feel free to ask about items like pizza boxes, plastics, electronics, batteries, coffee cups, or composting.`;
   }
 
+  // Conversational greetings (e.g. "hi", "hello")
+  const greetings = ['hi', 'hello', 'hey', 'greetings', 'good morning', 'good afternoon', 'good evening', 'howdy', 'sup'];
+  if (greetings.includes(query) || query === 'hi dakshan' || query === 'hello dakshan') {
+    return `Hello! 👋 I am **Dakshan AI**, your dedicated waste awareness and sorting assistant.
+
+Tell me what item, material, or packaging you need to dispose of (e.g., *used pizza box*, *lithium batteries*, *plastic takeout container*, *old phone*, or *coffee grounds*), and I'll guide you to the right bin or disposal method!`;
+  }
+
+  // Identity and Capabilities
+  if (query.includes('who are you') || query.includes('what can you do') || query.includes('what is dakshan') || query === 'help') {
+    return `I am **Dakshan AI**, an eco-assistant created to help you sort and divert household waste responsibly.
+
+Here is what I can help you with:
+- 🔵 **Recycling (Blue Bin)**: Checking plastic resin codes (#1, #2, #5), clean metals, paper, and glass bottles.
+- 🟡 **Compost / Organics (Green Bin)**: Identifying compostable food scraps, unbleached paper, yard waste, and what to keep out.
+- 🔴 **Hazardous Waste**: Safe disposal of batteries, motor oil, household chemicals, and fluorescent bulbs.
+- 🟣 **E-Waste**: Electronics trade-in, certified recyclers, and cable drop-offs.
+- ⚪ **Landfill / Trash**: Non-recyclable mixed materials and hard-to-recycle packaging.
+
+Simply type any household item or material you want to sort!`;
+  }
+
+  // Gratitude
+  if (query.includes('thank you') || query.includes('thanks') || query === 'thx') {
+    return `You're very welcome! 🌿 Every item correctly sorted helps reduce landfill waste and protects our ecosystems. Feel free to ask anytime!`;
+  }
+
   // Edge Case: Pizza Box
   if (query.includes('pizza') || query.includes('pizza box')) {
     return `**Category: Mixed (Compost + Recycling)**

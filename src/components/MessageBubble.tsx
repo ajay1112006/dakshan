@@ -25,20 +25,24 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreami
 
   // Helper to detect prominent waste category in bot answers for category pill
   const detectCategory = (text: string) => {
-    const lower = text.toLowerCase();
-    if (lower.includes('category: hazardous') || lower.includes('hazardous waste')) {
+    // Only detect if explicitly categorized (e.g. "**Category: ...**" or "Category: ...")
+    const match = text.match(/(?:\*\*Category:\s*|Category:\s*)([^*\n]+)/i);
+    if (!match) return null;
+
+    const catStr = match[1].toLowerCase();
+    if (catStr.includes('hazard')) {
       return { label: 'Hazardous Waste', icon: <AlertTriangle size={12} />, className: 'hazardous' };
     }
-    if (lower.includes('category: compost') || lower.includes('compost / organic') || lower.includes('organics bin')) {
+    if (catStr.includes('compost') || catStr.includes('organic')) {
       return { label: 'Compost / Organics', icon: <Sprout size={12} />, className: 'compost' };
     }
-    if (lower.includes('category: recycling') || lower.includes('recycling bin') || lower.includes('blue bin')) {
+    if (catStr.includes('recycle') || catStr.includes('recycling')) {
       return { label: 'Recycling', icon: <Recycle size={12} />, className: 'recycle' };
     }
-    if (lower.includes('category: e-waste') || lower.includes('electronic waste')) {
+    if (catStr.includes('e-waste') || catStr.includes('electronic')) {
       return { label: 'E-Waste', icon: <Cpu size={12} />, className: 'ewaste' };
     }
-    if (lower.includes('category: landfill') || lower.includes('category: general landfill') || lower.includes('trash bin')) {
+    if (catStr.includes('landfill') || catStr.includes('trash')) {
       return { label: 'Landfill / Trash', icon: <Trash2 size={12} />, className: 'landfill' };
     }
     return null;
