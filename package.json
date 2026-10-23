@@ -6,8 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "model:start": "tools\\llama\\llama-server.exe -m Qwen3-0.6B-Q8_0.gguf --port 8080 -c 2048 --host 127.0.0.1"
+    "lint": "eslint"
   },
   "dependencies": {
     "lucide-react": "^1.61.0",

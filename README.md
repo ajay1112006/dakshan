@@ -67,49 +67,17 @@ dakshan/
 
 ---
 
-## 🤖 AI Model Providers
+## 🤖 Powered Exclusively by Google Gemini
 
-### Option 1: Google Gemini API (Recommended for Cloud / Vercel / Instant Deployment)
-You can power Dakshan AI with Google's state-of-the-art Gemini models:
+Dakshan AI is powered directly by Google's Gemini models with real-time streaming:
 
-1. Get your free API key at [Google AI Studio](https://aistudio.google.com/app/apikey).
+1. Get your API key at [Google AI Studio](https://aistudio.google.com/app/apikey).
 2. Add your key to `.env.local` (or in your Vercel project Environment Variables):
    ```env
    GEMINI_API_KEY=AIzaSy...your_gemini_key_here
    GEMINI_MODEL=gemini-2.5-flash
    ```
-3. When `GEMINI_API_KEY` is present, Dakshan AI automatically routes to Gemini with dual failover support (Google's official OpenAI-compatible endpoint and native Gemini REST stream).
-
-### Option 2: Built-in Local GGUF Model (Offline)
-Your uploaded **`Qwen3-0.6B-Q8_0.gguf`** model runs locally using the included `llama-server.exe` in `tools/llama/`:
-
-```bash
-# Start the local inference server with your GGUF model:
-npm run model:start
-```
-The server binds to `http://127.0.0.1:8080/v1` and `.env.local` is already configured:
-```env
-LLM_BASE_URL=http://127.0.0.1:8080/v1
-LLM_MODEL=Qwen3-0.6B-Q8_0.gguf
-```
-
-### Option 3: Ollama (Alternative)
-```bash
-ollama run mistral
-```
-Set in `.env.local`:
-```env
-LLM_BASE_URL=http://127.0.0.1:11434/v1
-LLM_MODEL=mistral
-```
-
-### Option 4: LM Studio
-1. Open **LM Studio**, load your model, and start the local server on port `1234`.
-2. Set in `.env.local`:
-```env
-LLM_BASE_URL=http://127.0.0.1:1234/v1
-LLM_MODEL=default
-```
+3. Dakshan AI communicates directly with Google Gemini with dual streaming failover support (Google's official OpenAI-compatible endpoint and native Gemini REST stream).
 
 ---
 
@@ -119,14 +87,10 @@ Edit `.env.local` at the root of the project:
 
 | Variable | Default | Description |
 |---|---|---|
-| `GEMINI_API_KEY` | *(empty)* | Google Gemini API key. When provided, automatically activates Gemini. |
-| `GEMINI_MODEL` | `gemini-1.5-flash` | Gemini model name (`gemini-1.5-flash`, `gemini-2.0-flash`, `gemini-1.5-pro`) |
-| `LLM_BASE_URL` | `http://127.0.0.1:8080/v1` | Base URL of local OpenAI-compatible inference server |
-| `LLM_MODEL` | `default` | Model identifier passed to local server |
-| `LLM_API_KEY` | `not-needed` | Optional API key for local server |
-| `LLM_TEMPERATURE` | `0.2` | Sampling temperature (lower = more deterministic & factual) |
-| `LLM_TIMEOUT_MS` | `30000` | Request timeout in milliseconds (30 seconds) |
-| `ENABLE_OFFLINE_FALLBACK` | `true` | Provides instant fallback answers if model servers are offline |
+| `GEMINI_API_KEY` | *(required)* | Google Gemini API key from Google AI Studio |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini model name (e.g. `gemini-2.5-flash`, `gemini-2.5-pro`) |
+| `LLM_TEMPERATURE` | `0.7` | Sampling temperature for natural conversational flow |
+| `LLM_TIMEOUT_MS` | `45000` | Request timeout in milliseconds (45 seconds) |
 
 ---
 
