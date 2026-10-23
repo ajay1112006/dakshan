@@ -42,7 +42,7 @@ export function getLLMConfig() {
     : 'http://127.0.0.1:8080/v1';
 
   const defaultModel = isGemini
-    ? (process.env.GEMINI_MODEL || 'gemini-1.5-flash')
+    ? (process.env.GEMINI_MODEL || 'gemini-2.5-flash')
     : (process.env.LLM_MODEL || 'default');
 
   const baseUrl = (process.env.LLM_BASE_URL || defaultBaseUrl).replace(/\/+$/, '');
@@ -120,7 +120,7 @@ async function streamGeminiWithFallback(
 
   // 2. Attempt Google's native Gemini streamGenerateContent REST endpoint
   try {
-    const model = config.model.includes('gemini') ? config.model : 'gemini-1.5-flash';
+    const model = config.model.includes('gemini') ? config.model : 'gemini-2.5-flash';
     const nativeEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${config.apiKey}`;
 
     const systemMsg = messages.find((m) => m.role === 'system');
@@ -350,7 +350,7 @@ export async function checkLLMServerHealth(): Promise<ServerHealthStatus> {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3500);
-      const model = config.model.includes('gemini') ? config.model : 'gemini-1.5-flash';
+      const model = config.model.includes('gemini') ? config.model : 'gemini-2.5-flash';
 
       const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}?key=${config.apiKey}`,
