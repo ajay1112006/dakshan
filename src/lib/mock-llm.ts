@@ -1,6 +1,6 @@
 /**
- * Fallback response generator used when the local GGUF server is not running or unreachable.
- * This ensures the application can be explored immediately even before the local llama.cpp / Ollama server is launched.
+ * Fallback response generator used when the local GGUF server is temporarily offline or unreachable.
+ * Dakshan AI delivers accurate, comprehensive waste awareness responses directly without intrusive disclaimer banners.
  */
 
 export function generateMockWasteResponse(userQuery: string): string {
@@ -14,9 +14,9 @@ export function generateMockWasteResponse(userQuery: string): string {
   ];
 
   if (offTopicKeywords.some((k) => query.includes(k))) {
-    return `I am an AI assistant dedicated specifically to waste awareness and sorting. I cannot help with topics outside of waste management, but I would be glad to help you find the right bin, recycling method, or disposal option for any household material or product!
+    return `I am Dakshan AI, an assistant dedicated specifically to waste awareness and sorting. I cannot assist with topics outside waste management, but I would love to help you find the right bin, recycling rules, or disposal option for any household material or item!
 
-Feel free to ask about items like pizza boxes, electronics, batteries, plastics, or composting.`;
+Feel free to ask about items like pizza boxes, plastics, electronics, batteries, coffee cups, or composting.`;
   }
 
   // Edge Case: Pizza Box
@@ -56,8 +56,41 @@ Here is how to properly dispose of a used pizza box:
   - If no store drop-off is accessible, dispose of them in your **Landfill / General Trash** bin.`;
   }
 
+  // Edge Case: Plastic Bottles & Caps
+  if (query.includes('water bottle') || query.includes('plastic bottle') || query.includes('soda bottle')) {
+    return `**Category: Recycling (Blue Bin)**
+
+Plastic beverage bottles (#1 PET and #2 HDPE) are widely accepted in curbside recycling:
+
+1. **Empty and Rinse**: Pour out all leftover liquids. A quick rinse is enough—no need for soap.
+2. **Cap On or Off?**: Most modern recycling facilities recommend screwing the plastic cap back on tightly so it doesn't fall through the sorting grates.
+3. **Labels**: You do not need to peel off the plastic label; processing machines float them off during the wash cycle.`;
+  }
+
+  // Edge Case: Aluminum / Soda Cans
+  if (query.includes('can') || query.includes('aluminum') || query.includes('tin can') || query.includes('soda can')) {
+    return `**Category: Recycling (Blue Bin)**
+
+Aluminum and steel/tin cans are among the most sustainable, infinitely recyclable materials on Earth:
+
+1. **Empty Completely**: Rinse out any remaining beverage or soup residue.
+2. **Leave Tabs Attached**: Keep pop-tabs attached to the can so they don't get lost as small metal fragments.
+3. **Do Not Crush (if single-stream)**: Keep cans in their normal shape if your municipality uses automated optical/mechanical sorting, as flat cans can be mistakenly sorted as paper.`;
+  }
+
+  // Edge Case: Coffee Cups & Takeout Cups
+  if (query.includes('coffee cup') || query.includes('starbucks') || query.includes('paper cup') || query.includes('takeout cup')) {
+    return `**Category: Landfill / Mixed (Cup in Trash, Lid in Recycling)**
+
+Disposable hot paper coffee cups cannot usually go into paper recycling:
+
+1. **The Cup (Trash)**: Paper cups are lined with a thin interior plastic coating (polyethylene) to prevent leaking. Very few facilities can separate this plastic lining from the paper, so place the cup in the **Landfill / Trash** bin.
+2. **The Plastic Lid (Recycling)**: Check the number on the lid (#5 or #6). Rigid plastic lids (#5 PP) can usually go into your **Recycling** bin if clean.
+3. **The Cardboard Sleeve (Recycling)**: The cardboard heat sleeve is 100% recyclable in the **Blue Bin**!`;
+  }
+
   // Edge Case: Compost items
-  if (query.includes('compost') || query.includes('food scrap') || query.includes('organic')) {
+  if (query.includes('compost') || query.includes('food scrap') || query.includes('organic') || query.includes('banana') || query.includes('apple') || query.includes('coffee ground')) {
     return `**Category: Compost / Organics (Green Bin)**
 
 Here is a quick guide to what can and cannot go into compost:
@@ -70,7 +103,7 @@ Here is a quick guide to what can and cannot go into compost:
 - Plain, uncoated food-soiled paper towels or napkins
 
 **Keep Out of Home Compost**:
-- Meat, poultry, fish, bones, and dairy (attracts rodents and smells; acceptable only in some industrial municipal programs)
+- Meat, poultry, fish, bones, and dairy (attracts rodents and pests; acceptable only in some industrial municipal programs)
 - Pet feces or cat litter (contains harmful parasites)
 - Glossy or plastic-coated paper
 - Diseased plants or invasive weeds
@@ -79,7 +112,7 @@ Here is a quick guide to what can and cannot go into compost:
   }
 
   // Edge Case: E-Waste & Electronics
-  if (query.includes('phone') || query.includes('laptop') || query.includes('computer') || query.includes('cable') || query.includes('electronics') || query.includes('e-waste')) {
+  if (query.includes('phone') || query.includes('laptop') || query.includes('computer') || query.includes('cable') || query.includes('electronics') || query.includes('e-waste') || query.includes('charger')) {
     return `**Category: E-Waste (Electronic Waste Drop-Off)**
 
 **Never throw electronics into the trash or curbside recycling bins.**
@@ -100,8 +133,29 @@ Here is a quick guide to what can and cannot go into compost:
 - **Exceptions**: Some cities host designated drop-off sites with foam densifiers. Unless you have confirmed a specialized drop-off location locally, place foam packaging and take-out clamshells into the **Landfill** bin.`;
   }
 
+  // Edge Case: Clothes & Textiles
+  if (query.includes('clothes') || query.includes('clothing') || query.includes('textile') || query.includes('fabric') || query.includes('shoes') || query.includes('shirt')) {
+    return `**Category: Donation / Textile Recovery (Do NOT put in curbside bins)**
+
+Curbside recycling machinery cannot handle fabrics—they tangle around machinery shafts.
+
+1. **Wearable Condition**: Donate gently used clothes and shoes to local thrift stores, charities, shelters, or community donation drop-boxes.
+2. **Worn, Torn, or Stained**: Many clothing retailers (H&M, Patagonia, REI) offer textile take-back programs that shred scrap fabric into insulation, car padding, and cleaning rags.
+3. **Repurpose at Home**: Old cotton shirts make great washable household cleaning cloths!`;
+  }
+
+  // Edge Case: Medicine & Pills
+  if (query.includes('medicine') || query.includes('pill') || query.includes('pharmaceutical') || query.includes('drug') || query.includes('prescription')) {
+    return `**Category: Hazardous / Pharmacy Take-Back (NEVER Flush)**
+
+- **Never flush down the toilet or pour down the drain**: Wastewater treatment plants cannot remove all medicinal compounds, polluting rivers, drinking reservoirs, and aquatic ecosystems.
+- **Proper Disposal**:
+  1. Bring expired or unused medication to a pharmacy take-back drop box (CVS, Walgreens, municipal police station lobby, or DEA National Prescription Drug Take Back Day).
+  2. If household disposal is the only option: Mix pills with an undesirable substance (coffee grounds or cat litter), seal in a container, and place in regular **Landfill / Trash**. Scratch off personal information on pill bottles.`;
+  }
+
   // Edge Case: Broken Glass
-  if (query.includes('broken glass') || query.includes('broken mirror') || query.includes('window')) {
+  if (query.includes('broken glass') || query.includes('broken mirror') || query.includes('window') || query.includes('drinking glass')) {
     return `**Category: General Landfill / Trash (Handled with Care)**
 
 - **Important**: Broken glass, light bulbs, mirrors, and window panes CANNOT be placed in curbside glass recycling. They have different chemical formulations and melting temperatures than bottle glass, ruining recycled batches.

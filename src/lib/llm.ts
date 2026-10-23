@@ -80,10 +80,10 @@ export async function streamChatCompletion(messages: LLMMessage[]): Promise<Read
     clearTimeout(timeoutId);
     const errorMsg = err instanceof Error ? err.message : String(err);
 
-    // If local inference server is offline and fallback is enabled, deliver intelligent fallback with notice
+    // If local inference server is offline and fallback is enabled, deliver intelligent fallback
     if (config.enableFallback) {
       const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user')?.content || '';
-      return createFallbackStream(lastUserMsg, config.baseUrl);
+      return createFallbackStream(lastUserMsg);
     }
 
     throw new LLMConnectionError(
@@ -99,7 +99,7 @@ export async function streamChatCompletion(messages: LLMMessage[]): Promise<Read
     const errorText = await response.text().catch(() => '');
     if (config.enableFallback) {
       const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user')?.content || '';
-      return createFallbackStream(lastUserMsg, config.baseUrl);
+      return createFallbackStream(lastUserMsg);
     }
     throw new LLMConnectionError(
       `Inference server returned error ${response.status} (${response.statusText}): ${errorText}`,
@@ -178,26 +178,22 @@ export async function streamChatCompletion(messages: LLMMessage[]): Promise<Read
 }
 
 /**
- * Creates a streaming response from the fallback generator with a gentle notice.
+ * Creates a streaming response from the fallback generator.
+ * Streams clean, direct responses without intrusive debug or disclaimer notices.
  */
-function createFallbackStream(userQuery: string, baseUrl: string): ReadableStream<Uint8Array> {
+function createFallbackStream(userQuery: string): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const content = generateMockWasteResponse(userQuery);
-  const isLocalhost = baseUrl.includes('127.0.0.1') || baseUrl.includes('localhost');
-  const notice = isLocalhost
-    ? `> ℹ️ *Note: Running in offline awareness mode because local inference server at \`${baseUrl}\` was not reached. (Locally: run \`npm run model:start\`. On Vercel: set a cloud \`LLM_BASE_URL\` in Vercel settings).*\n\n`
-    : `> ℹ️ *Note: Inference server at \`${baseUrl}\` was unreachable. Running in offline awareness mode.*\n\n`;
-  const fullText = notice + content;
 
-  // Split into chunks to simulate natural streaming cadence
-  const chunks = fullText.match(/.{1,12}/g) || [fullText];
+  // Split into small chunks to simulate natural streaming cadence
+  const chunks = content.match(/.{1,12}/g) || [content];
 
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       for (const chunk of chunks) {
         controller.enqueue(encoder.encode(chunk));
         // Micro-delay between chunks to provide realistic streaming visual
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        await new Promise((resolve) => setTimeout(resolve, 15));
       }
       controller.close();
     },

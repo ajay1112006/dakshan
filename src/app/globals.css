@@ -487,6 +487,20 @@ body {
   margin: 0;
 }
 
+.bubble-content h3,
+.bubble-content h4,
+.bubble-content h5 {
+  margin: 0.25rem 0 0.1rem;
+  font-family: var(--font-heading);
+  color: #ffffff;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.bubble-content h3 { font-size: 1.12rem; }
+.bubble-content h4 { font-size: 1.04rem; }
+.bubble-content h5 { font-size: 0.98rem; }
+
 .bubble-content ul,
 .bubble-content ol {
   padding-left: 1.3rem;

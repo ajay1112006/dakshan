@@ -84,6 +84,22 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isStreami
     lines.forEach((line, index) => {
       const trimmed = line.trim();
 
+      // Headings (### , ## , # )
+      const headingMatch = trimmed.match(/^(#{1,3})\s+(.*)/);
+      if (headingMatch) {
+        flushList();
+        const level = headingMatch[1].length;
+        const headingText = headingMatch[2];
+        if (level === 1) {
+          elements.push(<h3 key={`h-${index}`} className="bubble-h1">{parseInlineStyles(headingText)}</h3>);
+        } else if (level === 2) {
+          elements.push(<h4 key={`h-${index}`} className="bubble-h2">{parseInlineStyles(headingText)}</h4>);
+        } else {
+          elements.push(<h5 key={`h-${index}`} className="bubble-h3">{parseInlineStyles(headingText)}</h5>);
+        }
+        return;
+      }
+
       // Blockquotes
       if (trimmed.startsWith('>')) {
         flushList();
