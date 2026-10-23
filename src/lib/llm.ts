@@ -183,7 +183,10 @@ export async function streamChatCompletion(messages: LLMMessage[]): Promise<Read
 function createFallbackStream(userQuery: string, baseUrl: string): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const content = generateMockWasteResponse(userQuery);
-  const notice = `> ℹ️ *Note: Connected to local awareness mode. To connect your live GGUF model, start \`llama-server\` or Ollama on \`${baseUrl}\`.*\n\n`;
+  const isLocalhost = baseUrl.includes('127.0.0.1') || baseUrl.includes('localhost');
+  const notice = isLocalhost
+    ? `> ℹ️ *Note: Running in offline awareness mode because local inference server at \`${baseUrl}\` was not reached. (Locally: run \`npm run model:start\`. On Vercel: set a cloud \`LLM_BASE_URL\` in Vercel settings).*\n\n`
+    : `> ℹ️ *Note: Inference server at \`${baseUrl}\` was unreachable. Running in offline awareness mode.*\n\n`;
   const fullText = notice + content;
 
   // Split into chunks to simulate natural streaming cadence
