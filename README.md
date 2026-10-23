@@ -76,7 +76,7 @@ You can power Dakshan AI with Google's state-of-the-art Gemini models:
 2. Add your key to `.env.local` (or in your Vercel project Environment Variables):
    ```env
    GEMINI_API_KEY=AIzaSy...your_gemini_key_here
-   GEMINI_MODEL=gemini-1.5-flash
+   GEMINI_MODEL=gemini-2.5-flash
    ```
 3. When `GEMINI_API_KEY` is present, Dakshan AI automatically routes to Gemini with dual failover support (Google's official OpenAI-compatible endpoint and native Gemini REST stream).
 

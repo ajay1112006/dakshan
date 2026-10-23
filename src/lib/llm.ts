@@ -27,6 +27,27 @@ export class LLMConnectionError extends Error {
 }
 
 /**
+ * Automatically maps deprecated or missing model names to the active stable Gemini model.
+ */
+export function sanitizeGeminiModel(configuredModel?: string): string {
+  if (!configuredModel) return 'gemini-2.5-flash';
+  const clean = configuredModel.trim().replace(/^models\//, '');
+  const deprecated = [
+    'gemini-1.5-flash',
+    'gemini-1.5-flash-latest',
+    'gemini-1.5-pro',
+    'gemini-1.5-pro-latest',
+    'gemini-2.0-flash',
+    'gemini-1.0-pro',
+    'default',
+  ];
+  if (deprecated.includes(clean)) {
+    return 'gemini-2.5-flash';
+  }
+  return clean;
+}
+
+/**
  * Retrieves configuration from environment variables with safe defaults.
  * Prioritizes Google Gemini when GEMINI_API_KEY is configured.
  */
@@ -42,17 +63,15 @@ export function getLLMConfig() {
     ? 'https://generativelanguage.googleapis.com/v1beta/openai'
     : 'http://127.0.0.1:8080/v1';
 
-  const defaultModel = isGemini
+  const rawModel = isGemini
     ? (process.env.GEMINI_MODEL || 'gemini-2.5-flash')
     : (process.env.LLM_MODEL || 'default');
+
+  const model = isGemini ? sanitizeGeminiModel(rawModel) : rawModel;
 
   const baseUrl = isGemini
     ? 'https://generativelanguage.googleapis.com/v1beta/openai'
     : (process.env.LLM_BASE_URL || defaultBaseUrl).replace(/\/+$/, '');
-
-  const model = isGemini
-    ? (process.env.GEMINI_MODEL || 'gemini-2.5-flash')
-    : (process.env.LLM_MODEL || defaultModel);
 
   const apiKey = isGemini ? geminiApiKey : (process.env.LLM_API_KEY || 'not-needed');
   const temperature = parseFloat(process.env.LLM_TEMPERATURE || (isGemini ? '0.7' : '0.2'));
@@ -91,6 +110,7 @@ export async function streamChatCompletion(messages: LLMMessage[]): Promise<Read
  * Streams response from Google Gemini.
  * Tries Google's official OpenAI-compatible endpoint first, then automatically fails over
  * to Google's native Gemini streamGenerateContent REST API if needed.
+ * Includes automatic model fallback to gemini-2.5-flash if a deprecated model was configured in Vercel.
  */
 async function streamGemini(
   messages: LLMMessage[],
@@ -100,81 +120,85 @@ async function streamGemini(
   const timeoutId = setTimeout(() => controller.abort(), config.timeoutMs);
 
   let lastErrorDetail = '';
+  // Try candidate models: primary sanitized model first, then gemini-2.5-flash as guaranteed fallback
+  const candidateModels = Array.from(new Set([config.model, 'gemini-2.5-flash']));
 
-  // 1. Attempt Google's official OpenAI-compatible endpoint
-  try {
-    const openAiEndpoint = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
-    const res = await fetch(openAiEndpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: config.model,
-        messages,
-        temperature: config.temperature,
-        stream: true,
-      }),
-      signal: controller.signal,
-    });
+  for (const modelToTry of candidateModels) {
+    // 1. Attempt Google's official OpenAI-compatible endpoint
+    try {
+      const openAiEndpoint = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+      const res = await fetch(openAiEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${config.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: modelToTry,
+          messages,
+          temperature: config.temperature,
+          stream: true,
+        }),
+        signal: controller.signal,
+      });
 
-    if (res.ok && res.body) {
-      clearTimeout(timeoutId);
-      return parseSSEStream(res.body);
+      if (res.ok && res.body) {
+        clearTimeout(timeoutId);
+        return parseSSEStream(res.body);
+      }
+
+      const errText = await res.text().catch(() => '');
+      lastErrorDetail = `OpenAI endpoint (${modelToTry}) status ${res.status}: ${errText}`;
+      console.warn('Gemini OpenAI endpoint attempt failed, trying native REST API:', lastErrorDetail);
+    } catch (err: unknown) {
+      lastErrorDetail = err instanceof Error ? err.message : String(err);
+      console.warn('Gemini OpenAI endpoint error, falling back to native REST API:', lastErrorDetail);
     }
 
-    const errText = await res.text().catch(() => '');
-    lastErrorDetail = `OpenAI endpoint status ${res.status}: ${errText}`;
-    console.warn('Gemini OpenAI endpoint failed, trying native REST API:', lastErrorDetail);
-  } catch (err: unknown) {
-    lastErrorDetail = err instanceof Error ? err.message : String(err);
-    console.warn('Gemini OpenAI endpoint error, falling back to native REST API:', lastErrorDetail);
-  }
+    // 2. Attempt Google's native Gemini streamGenerateContent REST endpoint
+    try {
+      const nativeEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelToTry}:streamGenerateContent?alt=sse&key=${config.apiKey}`;
 
-  // 2. Attempt Google's native Gemini streamGenerateContent REST endpoint
-  try {
-    const model = config.model.includes('gemini') ? config.model : 'gemini-2.5-flash';
-    const nativeEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${config.apiKey}`;
+      const systemMsg = messages.find((m) => m.role === 'system');
+      const chatMsgs = messages.filter((m) => m.role !== 'system');
 
-    const systemMsg = messages.find((m) => m.role === 'system');
-    const chatMsgs = messages.filter((m) => m.role !== 'system');
-
-    const nativeBody: Record<string, unknown> = {
-      contents: chatMsgs.map((m) => ({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }],
-      })),
-      generationConfig: {
-        temperature: config.temperature,
-      },
-    };
-
-    if (systemMsg) {
-      nativeBody.system_instruction = {
-        parts: [{ text: systemMsg.content }],
+      const nativeBody: Record<string, unknown> = {
+        contents: chatMsgs.map((m) => ({
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: m.content }],
+        })),
+        generationConfig: {
+          temperature: config.temperature,
+        },
       };
+
+      if (systemMsg) {
+        nativeBody.system_instruction = {
+          parts: [{ text: systemMsg.content }],
+        };
+      }
+
+      const nativeRes = await fetch(nativeEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(nativeBody),
+        signal: controller.signal,
+      });
+
+      if (nativeRes.ok && nativeRes.body) {
+        clearTimeout(timeoutId);
+        return parseSSEStream(nativeRes.body);
+      }
+
+      const nativeErr = await nativeRes.text().catch(() => '');
+      lastErrorDetail = `Native REST (${modelToTry}) status ${nativeRes.status}: ${nativeErr}`;
+      console.warn('Gemini Native REST attempt failed:', lastErrorDetail);
+    } catch (err: unknown) {
+      lastErrorDetail = err instanceof Error ? err.message : String(err);
     }
-
-    const nativeRes = await fetch(nativeEndpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(nativeBody),
-      signal: controller.signal,
-    });
-
-    if (nativeRes.ok && nativeRes.body) {
-      clearTimeout(timeoutId);
-      return parseSSEStream(nativeRes.body);
-    }
-
-    const nativeErr = await nativeRes.text().catch(() => '');
-    lastErrorDetail = `Native REST status ${nativeRes.status}: ${nativeErr}`;
-  } catch (err: unknown) {
-    lastErrorDetail = err instanceof Error ? err.message : String(err);
-  } finally {
-    clearTimeout(timeoutId);
   }
+
+  clearTimeout(timeoutId);
 
   throw new LLMConnectionError(
     `Failed to get response from Google Gemini API. Please check your API key and connection.`,
@@ -363,40 +387,39 @@ export async function checkLLMServerHealth(): Promise<ServerHealthStatus> {
   const startTime = Date.now();
 
   if (config.isGemini) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
-      const model = config.model.includes('gemini') ? config.model : 'gemini-2.5-flash';
+    const candidateModels = Array.from(new Set([config.model, 'gemini-2.5-flash']));
 
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}?key=${config.apiKey}`,
-        { method: 'GET', signal: controller.signal }
-      ).finally(() => clearTimeout(timeoutId));
+    for (const modelToTry of candidateModels) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
 
-      const latencyMs = Date.now() - startTime;
-      if (res.ok) {
-        return {
-          status: 'connected',
-          providerUrl: 'Google Gemini Cloud API',
-          model,
-          latencyMs,
-          message: `Connected to Google Gemini (${model}, ${latencyMs}ms)`,
-        };
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${modelToTry}?key=${config.apiKey}`,
+          { method: 'GET', signal: controller.signal }
+        ).finally(() => clearTimeout(timeoutId));
+
+        const latencyMs = Date.now() - startTime;
+        if (res.ok) {
+          return {
+            status: 'connected',
+            providerUrl: 'Google Gemini Cloud API',
+            model: modelToTry,
+            latencyMs,
+            message: `Connected to Google Gemini (${modelToTry}, ${latencyMs}ms)`,
+          };
+        }
+      } catch {
+        // try next candidate
       }
-      return {
-        status: 'unreachable',
-        providerUrl: 'Google Gemini Cloud API',
-        model,
-        message: `Gemini API returned status ${res.status}`,
-      };
-    } catch {
-      return {
-        status: 'unreachable',
-        providerUrl: 'Google Gemini Cloud API',
-        model: config.model,
-        message: 'Could not connect to Google Gemini API',
-      };
     }
+
+    return {
+      status: 'unreachable',
+      providerUrl: 'Google Gemini Cloud API',
+      model: config.model,
+      message: 'Could not connect to Google Gemini API (check API key)',
+    };
   }
 
   // Local OpenAI-compatible server health check
